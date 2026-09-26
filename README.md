@@ -25,7 +25,11 @@ La web se publica en **Vercel** y guarda los datos en **Upstash Redis**. Los dos
 5. Andá a la pestaña **Deployments**, abrí el menú **⋯** del último deploy y tocá **Redeploy**, para que la web tome la base de datos.
 6. Listo: abrí la dirección que te da Vercel (algo como `cumple-xxxx.vercel.app`) y creá tu lista.
 
-Si te olvidás del paso 4, la web muestra el aviso *"La base de datos no está configurada"*.
+Si aparece el aviso *"La base de datos no está configurada"*:
+
+- Revisá en **Settings → Environment Variables** que existan variables terminadas en `KV_REST_API_URL` y `KV_REST_API_TOKEN` (pueden tener un prefijo adelante). El aviso muestra qué variables encontró.
+- Si no están, en **Storage** abrí la base y tocá **Connect Project**, eligiendo el proyecto `cumple` y todos los entornos.
+- Después hacé **Redeploy**: las variables nuevas solo se cargan en un deploy nuevo.
 
 Cada vez que se suba un cambio a la rama principal de GitHub, Vercel actualiza la web solo.
 

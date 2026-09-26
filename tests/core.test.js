@@ -139,3 +139,14 @@ test('rechaza links que no son web', async () => {
   const { add } = await setup();
   await assert.rejects(add({ title: 'x', link: 'javascript:alert(1)' }), { status: 400 });
 });
+
+test('encuentra las credenciales de Upstash con o sin prefijo', async () => {
+  const { findRedisCredentials } = await import('../lib/store.js');
+  assert.deepEqual(findRedisCredentials({ KV_REST_API_URL: 'u', KV_REST_API_TOKEN: 't' }), { url: 'u', token: 't' });
+  assert.deepEqual(
+    findRedisCredentials({ STORAGE_KV_REST_API_URL: 'u', STORAGE_KV_REST_API_TOKEN: 't', STORAGE_KV_REST_API_READ_ONLY_TOKEN: 'r' }),
+    { url: 'u', token: 't' },
+  );
+  assert.deepEqual(findRedisCredentials({ UPSTASH_REDIS_REST_URL: 'u', UPSTASH_REDIS_REST_TOKEN: 't' }), { url: 'u', token: 't' });
+  assert.equal(findRedisCredentials({ KV_URL: 'redis://x', REDIS_URL: 'redis://x' }), null);
+});

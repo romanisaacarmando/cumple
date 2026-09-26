@@ -16,20 +16,27 @@ Funciona así:
 
 ## Publicarla en internet (gratis)
 
-La web se publica en **Vercel** y guarda los datos en **Upstash Redis**. Los dos tienen plan gratuito y todo se hace desde el navegador.
+La web se publica en **Vercel** y guarda los datos en **Supabase**. Los dos tienen plan gratuito.
 
-1. Entrá a [vercel.com](https://vercel.com) y registrate con **Continue with GitHub**.
-2. Tocá **Add New… → Project**, buscá el repositorio `cumple` y tocá **Import**.
-3. Dejá todo como está (Framework Preset: *Other*) y tocá **Deploy**.
-4. Cuando termine, entrá al proyecto → pestaña **Storage** → **Create Database** → elegí **Upstash** (Redis) → plan **Free** → conectala al proyecto (dejá marcados todos los entornos).
-5. Andá a la pestaña **Deployments**, abrí el menú **⋯** del último deploy y tocá **Redeploy**, para que la web tome la base de datos.
-6. Listo: abrí la dirección que te da Vercel (algo como `cumple-xxxx.vercel.app`) y creá tu lista.
+**En Supabase:**
 
-Si aparece el aviso *"La base de datos no está configurada"*:
+1. Creá un proyecto nuevo (o usá uno que ya tengas).
+2. Andá a **SQL Editor → New query**, pegá el contenido de [`supabase.sql`](supabase.sql) y tocá **Run**.
+3. Andá a **Project Settings → Data API** y copiá la **Project URL**.
+4. Andá a **Project Settings → API Keys** y copiá una **secret key** (`sb_secret_…`). Si tu proyecto usa las claves viejas, sirve la **service_role**. No uses la clave *anon* ni la *publishable*.
 
-- Revisá en **Settings → Environment Variables** que existan variables terminadas en `KV_REST_API_URL` y `KV_REST_API_TOKEN` (pueden tener un prefijo adelante). El aviso muestra qué variables encontró.
-- Si no están, en **Storage** abrí la base y tocá **Connect Project**, eligiendo el proyecto `cumple` y todos los entornos.
-- Después hacé **Redeploy**: las variables nuevas solo se cargan en un deploy nuevo.
+**En Vercel:**
+
+1. Entrá a [vercel.com](https://vercel.com) con **Continue with GitHub**, tocá **Add New… → Project** e importá el repositorio `cumple` (Framework Preset: *Other*).
+2. En el proyecto, andá a **Settings → Environment Variables** y agregá:
+   - `SUPABASE_URL` = la Project URL
+   - `SUPABASE_SECRET_KEY` = la secret key
+3. Andá a **Deployments → ⋯ → Redeploy**, porque las variables solo se cargan en un deploy nuevo.
+4. Abrí la dirección de producción (**Overview → Domains**) y creá tu lista.
+
+La secret key da acceso total a la base: cargala solo en Vercel y no la compartas.
+
+Si aparece el aviso *"La base de datos no está configurada"*, faltan las variables o falta el Redeploy. El aviso muestra qué variables encontró.
 
 Cada vez que se suba un cambio a la rama principal de GitHub, Vercel actualiza la web solo.
 
@@ -48,7 +55,8 @@ npm test       # corre los tests
 public/        páginas: inicio (index), panel del cumpleañero (admin) y lista para amigos (lista)
 api/           funciones del servidor (Vercel las ejecuta automáticamente)
 lib/core.js    reglas de la lista: crear, reservar, liberar, editar
-lib/store.js   guardado de datos (Upstash Redis, o memoria en desarrollo)
+lib/store.js   guardado de datos (Supabase, o memoria en desarrollo)
+supabase.sql   crea la tabla en Supabase
 dev-server.js  servidor local que imita a Vercel
 ```
 

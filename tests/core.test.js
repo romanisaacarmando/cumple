@@ -8,7 +8,7 @@ import {
   releaseGift,
   reserveGift,
 } from '../lib/core.js';
-import { createMemoryStore } from '../lib/store.js';
+import { createMemoryStore, createSupabaseStore, findSupabaseCredentials } from '../lib/store.js';
 
 async function setup() {
   const store = createMemoryStore();
@@ -140,13 +140,77 @@ test('rechaza links que no son web', async () => {
   await assert.rejects(add({ title: 'x', link: 'javascript:alert(1)' }), { status: 400 });
 });
 
-test('encuentra las credenciales de Upstash con o sin prefijo', async () => {
-  const { findRedisCredentials } = await import('../lib/store.js');
-  assert.deepEqual(findRedisCredentials({ KV_REST_API_URL: 'u', KV_REST_API_TOKEN: 't' }), { url: 'u', token: 't' });
+// Imita la API REST de Supabase (PostgREST) sobre la tabla kv, para probar
+// createSupabaseStore sin conexión a internet.
+function fakeSupabase() {
+  const rows = new Map();
+  const requests = [];
+  const parseIn = (v) => v.slice(4, -1).split(',').map((k) => JSON.parse(k));
+  async function fetchImpl(url, { method, headers, body }) {
+    requests.push({ url, method, headers });
+    const u = new URL(url);
+    assert.equal(u.pathname, '/rest/v1/kv');
+    assert.equal(headers.apikey, 'sb_secret_test');
+    const filter = u.searchParams.get('key');
+    const keys = filter?.startsWith('eq.') ? [filter.slice(3)] : filter ? parseIn(filter) : [];
+    const reply = (data) => ({ ok: true, status: 200, text: async () => JSON.stringify(data) });
+    if (method === 'GET') {
+      const select = u.searchParams.get('select').split(',');
+      return reply(keys.filter((k) => rows.has(k)).map((k) => Object.fromEntries(select.map((f) => [f, f === 'key' ? k : rows.get(k)]))));
+    }
+    if (method === 'POST') {
+      const ignore = headers.Prefer.includes('resolution=ignore-duplicates');
+      const inserted = [];
+      for (const r of JSON.parse(body)) {
+        if (ignore && rows.has(r.key)) continue;
+        rows.set(r.key, r.value);
+        inserted.push(r);
+      }
+      return reply(inserted);
+    }
+    if (method === 'DELETE') {
+      for (const k of keys) rows.delete(k);
+      return { ok: true, status: 204, text: async () => '' };
+    }
+    throw new Error(`método inesperado ${method}`);
+  }
+  return { fetchImpl, rows, requests };
+}
+
+test('la lista funciona completa sobre Supabase', async () => {
+  const fake = fakeSupabase();
+  const store = createSupabaseStore('https://abc.supabase.co', 'sb_secret_test', fake.fetchImpl);
+  const { id, adminKey } = await createList(store, { ownerName: 'Román' });
+  const act = (action, giftId, data) => adminAction(store, { id, key: adminKey, action, giftId, data });
+  await act('addGift', null, { title: 'Libro' });
+  const [libro, bici] = (await act('addGift', null, { title: 'Bici', shared: true })).gifts;
+
+  await reserveGift(store, { id, giftId: libro.id, name: 'Ana' });
+  await assert.rejects(reserveGift(store, { id, giftId: libro.id, name: 'Beto' }), { status: 409 });
+  const beto = await reserveGift(store, { id, giftId: bici.id, name: 'Beto' });
+  await reserveGift(store, { id, giftId: bici.id, name: 'Caro' });
+  await assert.rejects(reserveGift(store, { id, giftId: bici.id, name: 'Dani' }), { status: 409 });
+
+  let admin = await getAdminList(store, id, adminKey);
+  assert.deepEqual(admin.gifts.map((g) => g.taken), [1, 2]);
+
+  await releaseGift(store, { id, giftId: bici.id, ...beto });
+  admin = await act('deleteGift', libro.id);
+  assert.deepEqual(admin.gifts.map((g) => [g.title, g.taken]), [['Bici', 1]]);
+  assert.equal([...fake.rows.keys()].filter((k) => k.startsWith('resv:')).length, 1);
+
+  // Una clave nueva (sb_secret_) no se manda como JWT.
+  assert.equal(fake.requests[0].headers.Authorization, undefined);
+});
+
+test('encuentra las credenciales de Supabase', () => {
+  assert.deepEqual(findSupabaseCredentials({ SUPABASE_URL: 'https://x.supabase.co/', SUPABASE_SECRET_KEY: 'k' }), {
+    url: 'https://x.supabase.co',
+    key: 'k',
+  });
   assert.deepEqual(
-    findRedisCredentials({ STORAGE_KV_REST_API_URL: 'u', STORAGE_KV_REST_API_TOKEN: 't', STORAGE_KV_REST_API_READ_ONLY_TOKEN: 'r' }),
-    { url: 'u', token: 't' },
+    findSupabaseCredentials({ NEXT_PUBLIC_SUPABASE_URL: 'https://x.supabase.co', SUPABASE_SERVICE_ROLE_KEY: 'eyJ' }),
+    { url: 'https://x.supabase.co', key: 'eyJ' },
   );
-  assert.deepEqual(findRedisCredentials({ UPSTASH_REDIS_REST_URL: 'u', UPSTASH_REDIS_REST_TOKEN: 't' }), { url: 'u', token: 't' });
-  assert.equal(findRedisCredentials({ KV_URL: 'redis://x', REDIS_URL: 'redis://x' }), null);
+  assert.equal(findSupabaseCredentials({ SUPABASE_URL: 'https://x.supabase.co', SUPABASE_ANON_KEY: 'a' }), null);
 });

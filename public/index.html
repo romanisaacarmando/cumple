@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lista de regalos de cumple</title>
+  <meta name="description" content="Armá tu lista de regalos de cumpleaños, compartila por WhatsApp y que tus amigos elijan sin repetir.">
+  <meta property="og:title" content="Armá tu lista de regalos de cumple 🎁">
+  <meta property="og:description" content="Tus amigos eligen de tu lista y nadie repite regalo.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="wrap">
+    <header class="topbar"><a class="brand" href="/">🎁 Lista de cumple</a></header>
+
+    <section class="hero">
+      <span class="emoji" aria-hidden="true">🎂</span>
+      <h1>Que no te regalen dos veces lo mismo</h1>
+      <p class="message">Armá tu lista de regalos, mandala por WhatsApp y tus amigos eligen sin repetir. Vos no vas a saber quién regala qué.</p>
+    </section>
+
+    <section class="card" id="mine" hidden>
+      <h2>Tus listas</h2>
+      <div id="mine-list" class="row"></div>
+    </section>
+
+    <section class="card">
+      <ol class="steps">
+        <li><span class="n">1</span><div><strong>Armás tu lista</strong><br><span class="muted">Cosas que te gustaría recibir, con link y precio aproximado si querés.</span></div></li>
+        <li><span class="n">2</span><div><strong>La compartís por WhatsApp</strong><br><span class="muted">Un solo link para todos tus amigos y familia.</span></div></li>
+        <li><span class="n">3</span><div><strong>Cada uno reserva un regalo</strong><br><span class="muted">Queda bloqueado para los demás. Los más caros se pueden regalar entre dos.</span></div></li>
+      </ol>
+    </section>
+
+    <form class="card" id="create">
+      <h2>Crear mi lista</h2>
+      <label for="ownerName">Tu nombre</label>
+      <input type="text" id="ownerName" name="ownerName" maxlength="40" required autocomplete="given-name" placeholder="Ej: Román">
+
+      <label for="date">Fecha del cumple <span class="opt">(opcional)</span></label>
+      <input type="date" id="date" name="date">
+
+      <label for="message">Mensaje para tus amigos <span class="opt">(opcional)</span></label>
+      <textarea id="message" name="message" maxlength="300" placeholder="¡Hola! Como siempre me preguntan qué quiero, armé esta lista. Lo más importante es que vengan 🎉"></textarea>
+
+      <button class="btn block" type="submit">Crear mi lista 🎉</button>
+    </form>
+  </main>
+
+  <footer>Hecho con cariño para cumpleaños sin regalos repetidos.</footer>
+
+  <script type="module">
+    import { $, api, esc, rememberAdmin, saved, toast } from '/common.js';
+
+    const mine = saved.get('mine', []);
+    if (mine.length) {
+      $('#mine').hidden = false;
+      $('#mine-list').innerHTML = mine
+        .map((l) => `<a class="btn secondary" href="/a/${esc(l.id)}#k=${encodeURIComponent(l.adminKey)}">Lista de ${esc(l.ownerName)}</a>`)
+        .join('');
+    }
+
+    $('#create').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const button = e.target.querySelector('button');
+      button.disabled = true;
+      const data = Object.fromEntries(new FormData(e.target));
+      try {
+        const { id, adminKey } = await api('lists', { method: 'POST', body: data });
+        rememberAdmin(id, adminKey, data.ownerName.trim());
+        location.href = `/a/${id}#k=${encodeURIComponent(adminKey)}&nueva=1`;
+      } catch (err) {
+        toast(err.message, { error: true });
+        button.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

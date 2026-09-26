@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Lista de regalos de cumple</title>
+  <meta property="og:title" content="🎂 Mi lista de regalos de cumple">
+  <meta property="og:description" content="Elegí un regalo y reservalo, así nadie repite.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="wrap">
+    <div id="loading" class="loading">Cargando la lista…</div>
+
+    <div id="error" class="card hidden" style="margin-top: 32px">
+      <h2>No encontramos esta lista</h2>
+      <p id="error-msg" class="muted"></p>
+      <button class="btn secondary" onclick="location.reload()">Probar de nuevo</button>
+    </div>
+
+    <div id="app" class="hidden">
+      <section class="hero">
+        <span class="emoji" aria-hidden="true">🎂</span>
+        <h1 id="title"></h1>
+        <span class="date hidden" id="date"></span>
+        <p class="message" id="message"></p>
+      </section>
+
+      <p class="hint" id="how"></p>
+      <ul class="gifts" id="gifts"></ul>
+    </div>
+  </main>
+
+  <footer><a href="/">¿Querés tu propia lista? Creala acá</a></footer>
+
+  <dialog id="reserve-dialog">
+    <form method="dialog" id="reserve-form">
+      <h2 id="reserve-title"></h2>
+      <p class="muted" id="reserve-text"></p>
+      <label for="name-in">Tu nombre</label>
+      <input type="text" id="name-in" name="name" maxlength="40" required autocomplete="given-name" placeholder="Ej: Caro">
+      <p class="muted small" id="reserve-privacy"></p>
+      <div class="row" style="margin-top: 18px; justify-content: flex-end">
+        <button class="btn ghost" value="cancel" formnovalidate>Cancelar</button>
+        <button class="btn" value="ok" id="reserve-ok">Confirmar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script type="module">
+    import { $, api, esc, formatDate, idFromPath, saved, toast } from '/common.js';
+
+    const id = idFromPath();
+    const myKey = `res:${id}`;
+    let list = null;
+    let pendingGift = null;
+
+    // Reservas hechas desde este dispositivo: [{ giftId, rid, token }]
+    const mine = () => saved.get(myKey, []);
+    const myReservation = (g) => mine().find((r) => r.giftId === g.id && g.reservations.some((x) => x.rid === r.rid));
+
+    async function load() {
+      try {
+        list = await api(`list?id=${encodeURIComponent(id)}`);
+        render();
+      } catch (err) {
+        if (list) return; // si falla un refresco, dejamos lo que había
+        $('#loading').classList.add('hidden');
+        $('#error').classList.remove('hidden');
+        $('#error-msg').textContent = err.status === 404 ? 'Puede que el link esté incompleto. Pedile a quien te lo mandó que lo copie de nuevo.' : err.message;
+      }
+    }
+
+    function giftHtml(g) {
+      const my = myReservation(g);
+      const others = g.reservations.filter((r) => r.rid !== my?.rid);
+      const full = g.reservations.length >= g.slots;
+      let cls = '';
+      let status = '';
+      let action = '';
+
+      if (my) {
+        cls = 'mine';
+        if (!g.shared) status = '<strong>✓ Lo regalás vos</strong>';
+        else if (others.length) status = `<strong>✓ Lo regalás junto con ${esc(others[0].name)}</strong>`;
+        else status = '<strong>✓ Te anotaste</strong> · si nadie se suma, lo podés regalar por tu cuenta';
+        action = '<button class="btn ghost danger" data-act="release">Ya no lo regalo</button>';
+      } else if (full) {
+        cls = 'taken';
+        status = g.shared
+          ? `Lo regalan ${esc(g.reservations[0].name)} y ${esc(g.reservations[1].name)}`
+          : 'Ya lo eligió alguien';
+      } else if (g.shared && others.length) {
+        status = `<strong>${esc(others[0].name)}</strong> se anotó y busca con quién compartirlo`;
+        action = `<button class="btn shared" data-act="reserve">🤝 Me sumo con ${esc(others[0].name)}</button>`;
+      } else {
+        if (g.shared) status = 'Pueden regalarlo hasta dos personas';
+        action = '<button class="btn" data-act="reserve">🎁 Lo regalo yo</button>';
+      }
+
+      return `
+        <li class="gift ${cls}" data-id="${esc(g.id)}">
+          <div class="gift-head">
+            <span class="gift-title">${esc(g.title)}</span>
+            ${g.price ? `<span class="price">${esc(g.price)}</span>` : ''}
+          </div>
+          ${g.note ? `<p class="gift-note">${esc(g.note)}</p>` : ''}
+          ${g.shared || g.link ? `<div class="gift-meta">
+            ${g.shared ? '<span class="badge shared">👥 Entre dos</span>' : ''}
+            ${g.link ? `<a class="small" href="${esc(g.link)}" target="_blank" rel="noopener noreferrer">Ver ejemplo ↗</a>` : ''}
+          </div>` : ''}
+          ${status || action ? `<div class="gift-actions"><span class="status">${status}</span>${action}</div>` : ''}
+        </li>`;
+    }
+
+    function render() {
+      document.title = `Regalos para ${list.ownerName}`;
+      $('#loading').classList.add('hidden');
+      $('#app').classList.remove('hidden');
+      $('#title').textContent = `El cumple de ${list.ownerName}`;
+      $('#date').textContent = formatDate(list.date);
+      $('#date').classList.toggle('hidden', !list.date);
+      $('#message').textContent = list.message;
+
+      // Olvidamos reservas que ya no existen (p. ej. el cumpleañero liberó el regalo).
+      saved.set(myKey, mine().filter((r) => list.gifts.some((g) => g.id === r.giftId && g.reservations.some((x) => x.rid === r.rid))));
+
+      const available = list.gifts.filter((g) => g.reservations.length < g.slots && !myReservation(g)).length;
+      $('#how').innerHTML = list.gifts.length
+        ? `Elegí un regalo y tocá <strong>“Lo regalo yo”</strong>: queda reservado y nadie más lo puede elegir. ${esc(list.ownerName)} no va a saber quién regala qué 🤫<br><strong>${available}</strong> ${available === 1 ? 'regalo disponible' : 'regalos disponibles'}.`
+        : '';
+      $('#how').classList.toggle('hidden', !list.gifts.length);
+
+      $('#gifts').innerHTML = list.gifts.length
+        ? list.gifts.map(giftHtml).join('')
+        : `<li class="empty"><span class="emoji">🎈</span>${esc(list.ownerName)} todavía no agregó regalos. ¡Volvé en un rato!</li>`;
+    }
+
+    const dialog = $('#reserve-dialog');
+
+    $('#gifts').addEventListener('click', async (e) => {
+      const button = e.target.closest('button[data-act]');
+      if (!button) return;
+      const gift = list.gifts.find((g) => g.id === button.closest('.gift').dataset.id);
+
+      if (button.dataset.act === 'reserve') {
+        pendingGift = gift;
+        const partner = gift.shared ? gift.reservations[0] : null;
+        $('#reserve-title').textContent = gift.title;
+        $('#reserve-text').textContent = partner
+          ? `Lo vas a regalar junto con ${partner.name}. Pónganse de acuerdo entre ustedes 😉`
+          : gift.shared
+            ? 'Vas a reservar este regalo. Otra persona se puede sumar para regalarlo con vos.'
+            : 'Vas a reservar este regalo. Nadie más lo va a poder elegir.';
+        $('#reserve-privacy').textContent = gift.shared
+          ? `${list.ownerName} no ve tu nombre: solo quien comparta el regalo con vos.`
+          : `${list.ownerName} no ve tu nombre, solo que el regalo ya está reservado.`;
+        $('#name-in').value = saved.get('name', '');
+        dialog.showModal();
+      }
+
+      if (button.dataset.act === 'release') {
+        if (!confirm(`¿Seguro que ya no vas a regalar "${gift.title}"? Va a quedar disponible para otros.`)) return;
+        const my = myReservation(gift);
+        button.disabled = true;
+        try {
+          await api('release', { method: 'POST', body: { id, giftId: gift.id, rid: my.rid, token: my.token } });
+          saved.set(myKey, mine().filter((r) => r.rid !== my.rid));
+          toast('Listo, el regalo quedó libre');
+        } catch (err) {
+          toast(err.message, { error: true });
+        }
+        load();
+      }
+    });
+
+    dialog.addEventListener('close', async () => {
+      if (dialog.returnValue !== 'ok' || !pendingGift) return;
+      const gift = pendingGift;
+      pendingGift = null;
+      const name = $('#name-in').value.trim();
+      saved.set('name', name);
+      try {
+        const { rid, token } = await api('reserve', { method: 'POST', body: { id, giftId: gift.id, name } });
+        saved.set(myKey, [...mine(), { giftId: gift.id, rid, token }]);
+        toast(`¡Listo! Reservaste “${gift.title}” 🎉`);
+      } catch (err) {
+        toast(err.message, { error: true });
+      }
+      load();
+    });
+
+    load();
+    // Refresca cada tanto para ver lo que van eligiendo los demás.
+    setInterval(() => document.visibilityState === 'visible' && !dialog.open && load(), 20000);
+    document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && load());
+  </script>
+</body>
+</html>

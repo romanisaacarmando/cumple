@@ -1,0 +1,14 @@
+{
+  "name": "cumple",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Lista de regalos de cumpleaños: el cumpleañero arma la lista y sus amigos reservan regalos sin repetir.",
+  "type": "module",
+  "scripts": {
+    "dev": "node dev-server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
